@@ -30,64 +30,104 @@ class Messager {
         }
     }
 
-    renderMessage(msg) {
-        const messageDiv = document.createElement('div');
+renderMessage(msg) {
+    const messageDiv = document.createElement('div');
+    
+    if (msg.message_type === 'system') {
+        messageDiv.classList.add('message', 'message-system');
+    } else {
         messageDiv.classList.add('message', msg.is_own ? 'message-own' : 'message-other');
+    }
+    
+    let fileHtml = '';
+    if (msg.file_path) {
+        const fileName = msg.original_file_name;
+        const filePath = msg.file_path;
+        const mimeType = msg.file_mime_type || '';
         
-        let fileHtml = '';
-        if (msg.file_path) {
-            const fileName = msg.original_file_name;
-            const filePath = msg.file_path;
-            const mimeType = msg.file_mime_type || '';
-            
-            if (mimeType.startsWith('image/')) {
-                fileHtml = `<a href="${filePath}" target="_blank"><img src="${filePath}" alt="${fileName}"></a>`;
-            } else if (mimeType.startsWith('video/')) {
-                fileHtml = `<video controls src="${filePath}" preload="metadata"></video>`;
-            } else {
-                fileHtml = `<a href="${filePath}" class="file-attachment" download="${fileName}"><svg viewBox="0 0 24 24"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M13,9V3.5L18.5,9H13Z" /></svg><span>${fileName}</span></a>`;
-            }
+        if (mimeType.startsWith('image/')) {
+            fileHtml = `<a href="${filePath}" target="_blank"><img src="${filePath}" alt="${fileName}"></a>`;
+        } else if (mimeType.startsWith('video/')) {
+            fileHtml = `<video controls src="${filePath}" preload="metadata"></video>`;
+        } else {
+            fileHtml = `<a href="${filePath}" class="file-attachment" download="${fileName}"><svg viewBox="0 0 24 24"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M13,9V3.5L18.5,9H13Z" /></svg><span>${fileName}</span></a>`;
         }
-        
-        const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#/%?=~_|!:,.;]*[-A-Z0-9+&@#/%?=~_|])/ig;
-        const messageText = msg.message_text.replace(urlRegex, url => 
-            `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`
-        );
-        
+    }
+    
+    const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#/%?=~_|!:,.;]*[-A-Z0-9+&@#/%?=~_|])/ig;
+    const messageText = msg.message_text.replace(urlRegex, url => 
+        `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`
+    );
+    
+    
+    if (msg.message_type === 'system') {
+        messageDiv.innerHTML = `
+            <div class="system-message-content">${messageText}</div>
+            <div class="timestamp">${new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+        `;
+    } else {
         messageDiv.innerHTML = `
             <div class="meta">${msg.username}</div>
             <div class="message-content">${messageText}${fileHtml}</div>
             <div class="timestamp">${new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
         `;
-        
-        this.chatBox.appendChild(messageDiv);
+    }
+    
+    this.chatBox.appendChild(messageDiv);
 
-        try {
-            if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                if (!msg.is_own && (document.hidden || !document.hasFocus())) {
-                    const notifTitle = msg.username + ' — new message';
+    try {
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            if (!msg.is_own && (document.hidden || !document.hasFocus())) {
+                let notifTitle, notifBody;
+                
+                if (msg.message_type === 'system') {
+                    notifTitle = 'InfinityChat';
+                    notifBody = msg.message_text;
+                } else {
+                    notifTitle = msg.username + ' — new message';
                     const tmpDiv = document.createElement('div');
                     tmpDiv.innerHTML = msg.message_text || '';
-                    let notifBody = tmpDiv.textContent || tmpDiv.innerText || '';
+                    notifBody = tmpDiv.textContent || tmpDiv.innerText || '';
                     if (msg.original_file_name) {
                         notifBody += (notifBody ? ' — ' : '') + 'Attachment: ' + msg.original_file_name;
                     }
-                    if (notifBody.length > 200) notifBody = notifBody.substring(0,197) + '...';
-                    const notification = new Notification(notifTitle, {
-                        body: notifBody,
-                        icon: 'images/favicon-32.png',
-                        tag: 'chat-msg-' + msg.id
-                    });
-                    notification.onclick = function() {
-                        window.focus();
-                        this.close();
-                    };
                 }
+                
+                if (notifBody.length > 200) notifBody = notifBody.substring(0,197) + '...';
+                const notification = new Notification(notifTitle, {
+                    body: notifBody,
+                    icon: 'images/favicon-32.png',
+                    tag: 'chat-msg-' + msg.id
+                });
+                notification.onclick = function() {
+                    window.focus();
+                    this.close();
+                };
             }
-        } catch (e) {
-            console.warn('Notification error:', e);
         }
+    } catch (e) {
+        console.warn('Notification error:', e);
     }
+}
+
+async updateUserStatus(status) {
+    try {
+        const formData = new FormData();
+        formData.append('status', status);
+        
+        const response = await fetch('api.php?action=update_status', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            console.error('Failed to update user status');
+        }
+    } catch (error) {
+        console.error('Error updating user status:', error);
+    }
+}
+
 
     async uploadFileInChunks(file) {
         const totalChunks = Math.ceil(file.size / this.CHUNK_SIZE);
@@ -174,17 +214,34 @@ class Messager {
         }
     }
 
-    startPolling() {
-        this.fetchMessages().then(() => {
-            this.chatBox.scrollTop = this.chatBox.scrollHeight;
-            this.pollingInterval = setInterval(() => this.fetchMessages(), 1500);
-        });
-    }
-
-    stopPolling() {
-        if (this.pollingInterval) {
-            clearInterval(this.pollingInterval);
-            this.pollingInterval = null;
+startPolling() {
+    this.updateUserStatus('online');
+    
+    this.fetchMessages().then(() => {
+        this.chatBox.scrollTop = this.chatBox.scrollHeight;
+        this.pollingInterval = setInterval(() => this.fetchMessages(), 1500);
+    });
+    
+    window.addEventListener('beforeunload', () => {
+        const formData = new FormData();
+        formData.append('status', 'offline');
+        navigator.sendBeacon('api.php?action=update_status', formData);
+    });
+    
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          
+        } else {
+            this.updateUserStatus('online');
         }
+    });
+}
+
+stopPolling() {
+    if (this.pollingInterval) {
+        clearInterval(this.pollingInterval);
+        this.pollingInterval = null;
     }
+    this.updateUserStatus('offline');
+}
 }

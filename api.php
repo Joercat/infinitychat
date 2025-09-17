@@ -5,6 +5,11 @@ if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 
+function cleanupOfflineUsers($conn) {
+    $stmt = $conn->prepare("UPDATE users SET is_online = 0 WHERE last_seen < DATE_SUB(NOW(), INTERVAL 5 MINUTE) AND is_online = 1");
+    $stmt->execute();
+    $stmt->close();
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['username'])) {
     $username = trim(strip_tags($_POST['username']));
@@ -35,11 +40,14 @@ if (isset($_GET['action'])) {
     $conn = getDbConnection();
     $action = $_GET['action'];
     header('Content-Type: application/json');
+    if (rand(1, 5) === 1) {
+        cleanupOfflineUsers($conn);
+    }
     
     if ($action === 'get_messages') {
         $last_id = isset($_GET['last_id']) ? (int)$_GET['last_id'] : 0;
         $user_id = $_SESSION['user_id'];
-        $stmt = $conn->prepare("SELECT m.id, m.user_id, m.message_text, m.file_path, m.original_file_name, m.file_mime_type, m.created_at, u.username FROM messages m JOIN users u ON m.user_id = u.id WHERE m.id > ? ORDER BY m.id ASC LIMIT 100");
+        $stmt = $conn->prepare("SELECT m.id, m.user_id, m.message_text, m.file_path, m.original_file_name, m.file_mime_type, m.message_type, m.created_at, u.username FROM messages m JOIN users u ON m.user_id = u.id WHERE m.id > ? ORDER BY m.id ASC LIMIT 100");
         $stmt->bind_param("i", $last_id);
         $stmt->execute();
         $result = $stmt->get_result();
@@ -48,6 +56,7 @@ if (isset($_GET['action'])) {
             $row['is_own'] = ($row['user_id'] == $user_id);
             $row['username'] = htmlspecialchars($row['username']);
             $row['message_text'] = htmlspecialchars($row['message_text']);
+            $row['message_type'] = $row['message_type'] ?? 'user'; // Default to 'user' if null
             $messages[] = $row;
         }
         $stmt->close();
@@ -72,6 +81,40 @@ if (isset($_GET['action'])) {
             echo json_encode(['error' => 'Failed to save message']); 
         }
         $stmt->close();
+
+    } elseif ($action === 'update_status') {
+        $user_id = $_SESSION['user_id'];
+        $status = $_POST['status'] ?? '';
+        $username = $_SESSION['username'];
+        
+        if ($status === 'online') {
+            $stmt = $conn->prepare("UPDATE users SET last_seen = NOW(), is_online = 1 WHERE id = ?");
+            $stmt->bind_param("i", $user_id);
+            $stmt->execute();
+            $stmt->close();
+            
+            $join_message = "{$username} joined the chat!";
+            $stmt = $conn->prepare("INSERT INTO messages (user_id, message_text, message_type) VALUES (?, ?, 'system')");
+            $stmt->bind_param("is", $user_id, $join_message);
+            $stmt->execute();
+            $stmt->close();
+            
+            echo json_encode(['success' => true, 'message' => 'User set online']);
+            
+        } elseif ($status === 'offline') {
+            $stmt = $conn->prepare("UPDATE users SET last_seen = NOW(), is_online = 0 WHERE id = ?");
+            $stmt->bind_param("i", $user_id);
+            $stmt->execute();
+            $stmt->close();
+            
+            $leave_message = "{$username} left the chat.";
+            $stmt = $conn->prepare("INSERT INTO messages (user_id, message_text, message_type) VALUES (?, ?, 'system')");
+            $stmt->bind_param("is", $user_id, $leave_message);
+            $stmt->execute();
+            $stmt->close();
+            
+            echo json_encode(['success' => true, 'message' => 'User set offline']);
+        }
 
     } elseif ($action === 'upload_chunk') {
         if (!is_dir(UPLOAD_DIR_PATH) && !mkdir(UPLOAD_DIR_PATH, 0755, true)) { 

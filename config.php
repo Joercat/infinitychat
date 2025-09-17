@@ -5,10 +5,8 @@ define('DB_PASS', 'IVrxlCt5myQaHK');
 define('DB_NAME', 'if0_39948895_chats');
 define('UPLOAD_DIR_NAME', 'uploads');
 define('UPLOAD_DIR_PATH', __DIR__ . '/' . UPLOAD_DIR_NAME . '/');
-// Set maximum message length (in characters)
 define('MAX_MESSAGE_LENGTH', 1500);
 
-// Set the default timezone to Eastern Time
 date_default_timezone_set('America/New_York');
 
 function getDbConnection() {
@@ -23,8 +21,7 @@ function getDbConnection() {
         }
         exit;
     }
-    
-    // Set the MySQL connection to use Eastern Time
+
     $conn->query("SET time_zone = '-04:00'");
     
     return $conn;
@@ -35,6 +32,8 @@ function setupDatabase($conn) {
         CREATE TABLE IF NOT EXISTS users (
             id INT(11) AUTO_INCREMENT PRIMARY KEY,
             username VARCHAR(50) NOT NULL UNIQUE,
+            is_online TINYINT(1) DEFAULT 0,
+            last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -45,6 +44,7 @@ function setupDatabase($conn) {
             file_path VARCHAR(260),
             original_file_name VARCHAR(255),
             file_mime_type VARCHAR(100),
+            message_type ENUM('user', 'system') DEFAULT 'user',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
@@ -53,5 +53,9 @@ function setupDatabase($conn) {
         error_log("Table creation failed: " . $conn->error);
     }
     while ($conn->next_result()) { if ($res = $conn->store_result()) { $res->free(); } }
+    
+    $conn->query("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_online TINYINT(1) DEFAULT 0");
+    $conn->query("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+    $conn->query("ALTER TABLE messages ADD COLUMN IF NOT EXISTS message_type ENUM('user', 'system') DEFAULT 'user'");
 }
-?
+?>
