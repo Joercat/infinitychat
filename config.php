@@ -7,6 +7,8 @@ define('UPLOAD_DIR_NAME', 'uploads');
 define('UPLOAD_DIR_PATH', __DIR__ . '/' . UPLOAD_DIR_NAME . '/');
 define('MAX_MESSAGE_LENGTH', 1500);
 
+$maintenance_mode = false;
+
 date_default_timezone_set('America/New_York');
 
 function getDbConnection() {
