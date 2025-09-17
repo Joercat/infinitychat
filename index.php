@@ -1,22 +1,28 @@
 <?php
-if (file_exists('config.php')) {
-    require_once 'config.php';
+if (!file_exists('config.php')) {
+    require_once 'maintenance.php';
+    exit;
 }
+
+require_once 'config.php';
 
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
+}
 
+if (isset($maintenance_mode) && $maintenance_mode === true) {
+    require_once 'maintenance.php';
+    exit;
 }
 
 if (!isset($_SESSION['user_id'])) {
-
     try {
         $conn = getDbConnection();
         setupDatabase($conn);
 
         $conn->close();
-            header("Location: login.html");
-            exit;
+        header("Location: login.html");
+        exit;
     } catch (Exception $e) {
         echo "Error: " . $e->getMessage() . "<br>";
     }
