@@ -1,247 +1,421 @@
-class Messager {
-    constructor() {
-        this.chatBox = document.getElementById('chat-box');
-        this.lastMessageId = 0;
-        this.isFetching = false;
-        this.pollingInterval = null;
-        this.CHUNK_SIZE = 10 * 1024 * 1024;
-    }
+// Global state management
+const state = {
+    currentPage: 1,
+    isLoading: false,
+    hasMore: true,
+    messagesPerPage: 50,
+    messageCache: new Map(),
+    lastFetch: null,
+    reconnectAttempts: 0,
+    maxReconnectAttempts: 5,
+    reconnectDelay: 1000,
+    activeUsers: new Set(),
+    pendingUploads: new Map(),
+    notifications: []
+};
 
-    async fetchMessages() {
-        if (this.isFetching) return;
-        this.isFetching = true;
-        try {
-            const response = await fetch(`api.php?action=get_messages&last_id=${this.lastMessageId}`);
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const messages = await response.json();
-            if (messages.length > 0) {
-                const isScrolledToBottom = this.chatBox.scrollHeight - this.chatBox.clientHeight <= this.chatBox.scrollTop + 50;
-                messages.forEach(msg => this.renderMessage(msg));
-                this.lastMessageId = messages[messages.length - 1].id;
-                if (isScrolledToBottom) {
-                    this.chatBox.scrollTop = this.chatBox.scrollHeight;
-                }
-            }
-        } catch (error) {
-            console.error('Error fetching messages:', error);
-            if (this.pollingInterval) clearInterval(this.pollingInterval);
-        } finally {
-            this.isFetching = false;
-        }
-    }
+// Initialize WebSocket connection
+let ws = null;
+const WS_URL = `ws://${window.location.host}/ws`;
 
-renderMessage(msg) {
-    const messageDiv = document.createElement('div');
-    
-    if (msg.message_type === 'system') {
-        messageDiv.classList.add('message', 'message-system');
-    } else {
-        messageDiv.classList.add('message', msg.is_own ? 'message-own' : 'message-other');
-    }
-    
-    let fileHtml = '';
-    if (msg.file_path) {
-        const fileName = msg.original_file_name;
-        const filePath = msg.file_path;
-        const mimeType = msg.file_mime_type || '';
+// Message queue for offline functionality
+const messageQueue = {
+    queue: [],
+    add: function(message) {
+        this.queue.push(message);
+        this.persistQueue();
+        this.processQueue();
+    },
+    persistQueue: function() {
+        localStorage.setItem('messageQueue', JSON.stringify(this.queue));
+    },
+    loadQueue: function() {
+        const saved = localStorage.getItem('messageQueue');
+        this.queue = saved ? JSON.parse(saved) : [];
+    },
+    processQueue: async function() {
+        if (!navigator.onLine) return;
         
-        if (mimeType.startsWith('image/')) {
-            fileHtml = `<a href="${filePath}" target="_blank"><img src="${filePath}" alt="${fileName}"></a>`;
-        } else if (mimeType.startsWith('video/')) {
-            fileHtml = `<video controls src="${filePath}" preload="metadata"></video>`;
-        } else {
-            fileHtml = `<a href="${filePath}" class="file-attachment" download="${fileName}"><svg viewBox="0 0 24 24"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M13,9V3.5L18.5,9H13Z" /></svg><span>${fileName}</span></a>`;
-        }
-    }
-    
-    const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#/%?=~_|!:,.;]*[-A-Z0-9+&@#/%?=~_|])/ig;
-    const messageText = msg.message_text.replace(urlRegex, url => 
-        `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`
-    );
-    
-    
-    if (msg.message_type === 'system') {
-        messageDiv.innerHTML = `
-            <div class="system-message-content">${messageText}</div>
-            <div class="timestamp">${new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-        `;
-    } else {
-        messageDiv.innerHTML = `
-            <div class="meta">${msg.username}</div>
-            <div class="message-content">${messageText}${fileHtml}</div>
-            <div class="timestamp">${new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-        `;
-    }
-    
-    this.chatBox.appendChild(messageDiv);
-
-    try {
-        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-            if (!msg.is_own && (document.hidden || !document.hasFocus())) {
-                let notifTitle, notifBody;
-                
-                if (msg.message_type === 'system') {
-                    notifTitle = 'InfinityChat';
-                    notifBody = msg.message_text;
-                } else {
-                    notifTitle = msg.username + ' — new message';
-                    const tmpDiv = document.createElement('div');
-                    tmpDiv.innerHTML = msg.message_text || '';
-                    notifBody = tmpDiv.textContent || tmpDiv.innerText || '';
-                    if (msg.original_file_name) {
-                        notifBody += (notifBody ? ' — ' : '') + 'Attachment: ' + msg.original_file_name;
-                    }
-                }
-                
-                if (notifBody.length > 200) notifBody = notifBody.substring(0,197) + '...';
-                const notification = new Notification(notifTitle, {
-                    body: notifBody,
-                    icon: 'images/favicon-32.png',
-                    tag: 'chat-msg-' + msg.id
-                });
-                notification.onclick = function() {
-                    window.focus();
-                    this.close();
-                };
+        while (this.queue.length > 0) {
+            const message = this.queue[0];
+            try {
+                await sendMessage(message);
+                this.queue.shift();
+                this.persistQueue();
+            } catch (error) {
+                console.error('Failed to process queued message:', error);
+                break;
             }
         }
-    } catch (e) {
-        console.warn('Notification error:', e);
     }
+};
+
+// Initialize chat system
+document.addEventListener('DOMContentLoaded', () => {
+    initializeChat();
+    initializeWebSocket();
+    setupEventListeners();
+    messageQueue.loadQueue();
+});
+
+async function initializeChat() {
+    const chatBox = document.getElementById('chat-box');
+    if (!chatBox) {
+        console.error('Chat box element not found!');
+        return;
+    }
+
+    // Initialize IntersectionObserver for lazy loading images
+    const imageObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const img = entry.target;
+                img.src = img.dataset.src;
+                observer.unobserve(img);
+            }
+        });
+    });
+
+    // Setup infinite scroll
+    const scrollObserver = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && state.hasMore && !state.isLoading) {
+            loadMoreMessages();
+        }
+    }, { threshold: 0.1 });
+
+    // Add sentinel element for infinite scroll
+    const sentinel = document.createElement('div');
+    sentinel.id = 'scroll-sentinel';
+    chatBox.insertBefore(sentinel, chatBox.firstChild);
+    scrollObserver.observe(sentinel);
+
+    // Initial load
+    await loadMessages();
 }
 
-async updateUserStatus(status) {
+async function loadMessages(page = 1) {
+    if (state.isLoading) return;
+    
+    state.isLoading = true;
+    updateLoadingState(true);
+    
     try {
-        const formData = new FormData();
-        formData.append('status', status);
+        const response = await fetch(`get_messages.php?page=${page}&limit=${state.messagesPerPage}`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
-        const response = await fetch('api.php?action=update_status', {
-            method: 'POST',
-            body: formData
+        const data = await response.json();
+        
+        // Update state
+        state.currentPage = page;
+        state.hasMore = data.pagination.hasMore;
+        state.lastFetch = new Date();
+        
+        // Process messages
+        const fragment = document.createDocumentFragment();
+        data.messages.forEach(message => {
+            const messageElement = createMessageElement(message);
+            state.messageCache.set(message.id, message);
+            fragment.appendChild(messageElement);
         });
         
-        if (!response.ok) {
-            console.error('Failed to update user status');
-        }
-    } catch (error) {
-        console.error('Error updating user status:', error);
-    }
-}
-
-
-    async uploadFileInChunks(file) {
-        const totalChunks = Math.ceil(file.size / this.CHUNK_SIZE);
-        const uniqueId = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        const chatBox = document.getElementById('chat-box');
+        const oldScrollHeight = chatBox.scrollHeight;
         
-        const progressContainer = document.getElementById('upload-progress-container');
-        const progressBar = document.getElementById('upload-progress');
-        const progressFilename = document.getElementById('upload-filename');
-        
-        progressContainer.style.display = 'block';
-        progressFilename.textContent = file.name;
-        progressBar.value = 0;
-        
-        for (let chunkIndex = 1; chunkIndex <= totalChunks; chunkIndex++) {
-            const start = (chunkIndex - 1) * this.CHUNK_SIZE;
-            const chunk = file.slice(start, start + this.CHUNK_SIZE);
-            const formData = new FormData();
-            formData.append('fileChunk', chunk);
-            formData.append('chunkIndex', chunkIndex);
-            formData.append('totalChunks', totalChunks);
-            formData.append('originalFilename', file.name);
-            formData.append('fileIdentifier', uniqueId);
-            
-            try {
-                const response = await fetch('api.php?action=upload_chunk', { 
-                    method: 'POST', 
-                    body: formData 
-                });
-                if (!response.ok) throw new Error(`Chunk ${chunkIndex} failed. Server responded with ${response.status}`);
-                const result = await response.json();
-                if (result.error) throw new Error(result.error);
-                progressBar.value = (chunkIndex / totalChunks) * 100;
-                if (chunkIndex === totalChunks && result.final_path) {
-                    return { 
-                        filePath: result.final_path, 
-                        originalName: file.name, 
-                        mimeType: file.type 
-                    };
-                }
-            } catch (error) {
-                console.error("Upload error:", error);
-                alert('File upload failed: ' + error.message);
-                progressContainer.style.display = 'none';
-                return null;
-            }
-        }
-    }
-
-    async sendMessage(messageText, file = null) {
-        let fileInfo = null;
-        if (file) {
-            fileInfo = await this.uploadFileInChunks(file);
-            if (!fileInfo) return false;
-        }
-        
-        const formData = new FormData();
-        formData.append('message', messageText);
-        if (fileInfo) {
-            formData.append('file_path', fileInfo.filePath);
-            formData.append('original_file_name', fileInfo.originalName);
-            formData.append('file_mime_type', fileInfo.mimeType);
-        }
-        
-        try {
-            const response = await fetch('api.php?action=send_message', { 
-                method: 'POST', 
-                body: formData 
-            });
-            if (response.ok) {
-                const progressContainer = document.getElementById('upload-progress-container');
-                progressContainer.style.display = 'none';
-                await this.fetchMessages();
-                this.chatBox.scrollTop = this.chatBox.scrollHeight;
-                return true;
-            } else {
-                const errorResult = await response.json();
-                alert(`Failed to send message: ${errorResult.error || 'Unknown error'}`);
-                return false;
-            }
-        } catch (error) {
-            console.error('Error sending message:', error);
-            alert('An error occurred. Please try again.');
-            return false;
-        }
-    }
-
-startPolling() {
-    this.updateUserStatus('online');
-    
-    this.fetchMessages().then(() => {
-        this.chatBox.scrollTop = this.chatBox.scrollHeight;
-        this.pollingInterval = setInterval(() => this.fetchMessages(), 1500);
-    });
-    
-    window.addEventListener('beforeunload', () => {
-        const formData = new FormData();
-        formData.append('status', 'offline');
-        navigator.sendBeacon('api.php?action=update_status', formData);
-    });
-    
-    document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-          
+        if (page === 1) {
+            chatBox.innerHTML = '';
+            chatBox.appendChild(fragment);
+            chatBox.scrollTop = chatBox.scrollHeight;
         } else {
-            this.updateUserStatus('online');
+            chatBox.insertBefore(fragment, chatBox.firstChild);
+            chatBox.scrollTop = chatBox.scrollHeight - oldScrollHeight;
         }
-    });
+        
+    } catch (error) {
+        console.error('Error loading messages:', error);
+        showError('Failed to load messages. Please try again.');
+        
+        // Implement exponential backoff for retries
+        if (state.reconnectAttempts < state.maxReconnectAttempts) {
+            setTimeout(() => {
+                state.reconnectAttempts++;
+                loadMessages(page);
+            }, state.reconnectDelay * Math.pow(2, state.reconnectAttempts));
+        }
+    } finally {
+        state.isLoading = false;
+        updateLoadingState(false);
+    }
 }
 
-stopPolling() {
-    if (this.pollingInterval) {
-        clearInterval(this.pollingInterval);
-        this.pollingInterval = null;
+function createMessageElement(message) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${message.user_id === getCurrentUserId() ? 'own-message' : ''}`;
+    messageDiv.dataset.messageId = message.id;
+    
+    // Message header
+    const header = document.createElement('div');
+    header.className = 'message-header';
+    
+    const avatar = document.createElement('img');
+    avatar.className = 'user-avatar';
+    avatar.src = message.avatar_url || 'default-avatar.png';
+    avatar.alt = `${message.username}'s avatar`;
+    
+    const userInfo = document.createElement('div');
+    userInfo.className = 'user-info';
+    userInfo.innerHTML = `
+        <strong class="username">${escapeHtml(message.username)}</strong>
+        <span class="user-role ${message.role}">${message.role}</span>
+        <span class="timestamp" title="${new Date(message.timestamp).toLocaleString()}">
+            ${formatTimestamp(message.timestamp)}
+        </span>
+        ${message.edited_at ? '<span class="edited-indicator">(edited)</span>' : ''}
+    `;
+    
+    header.appendChild(avatar);
+    header.appendChild(userInfo);
+    
+    // Message content
+    const content = document.createElement('div');
+    content.className = 'message-content';
+    content.innerHTML = formatMessageContent(message.message);
+    
+    // File attachments
+    if (message.attachments && message.attachments.length > 0) {
+        const attachmentsDiv = document.createElement('div');
+        attachmentsDiv.className = 'attachments';
+        
+        message.attachments.forEach(attachment => {
+            const attachmentElement = createAttachmentPreview(attachment);
+            attachmentsDiv.appendChild(attachmentElement);
+        });
+        
+        content.appendChild(attachmentsDiv);
     }
-    this.updateUserStatus('offline');
+    
+    // Reactions
+    if (message.reactions && Object.keys(message.reactions).length > 0) {
+        const reactionsDiv = document.createElement('div');
+        reactionsDiv.className = 'reactions';
+        
+        Object.entries(message.reactions).forEach(([type, count]) => {
+            const reaction = document.createElement('span');
+            reaction.className = 'reaction';
+            reaction.innerHTML = `${type} ${count}`;
+            reaction.onclick = () => toggleReaction(message.id, type);
+            reactionsDiv.appendChild(reaction);
+        });
+        
+        content.appendChild(reactionsDiv);
+    }
+    
+    // Action buttons
+    if (message.can_edit || message.can_delete) {
+        const actions = document.createElement('div');
+        actions.className = 'message-actions';
+        
+        if (message.can_edit) {
+            const editBtn = document.createElement('button');
+            editBtn.className = 'edit-btn';
+            editBtn.innerHTML = '✏️';
+            editBtn.onclick = () => editMessage(message.id);
+            actions.appendChild(editBtn);
+        }
+        
+        if (message.can_delete) {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'delete-btn';
+            deleteBtn.innerHTML = '🗑️';
+            deleteBtn.onclick = () => deleteMessage(message.id);
+            actions.appendChild(deleteBtn);
+        }
+        
+        header.appendChild(actions);
+    }
+    
+    messageDiv.appendChild(header);
+    messageDiv.appendChild(content);
+    
+    return messageDiv;
 }
+
+function createAttachmentPreview(attachment) {
+    const previewDiv = document.createElement('div');
+    previewDiv.className = 'attachment-preview';
+    
+    if (attachment.file_type.startsWith('image/')) {
+        const img = document.createElement('img');
+        img.className = 'lazy-image';
+        img.dataset.src = attachment.file_path;
+        img.alt = attachment.file_name;
+        img.loading = 'lazy';
+        
+        const wrapper = document.createElement('div');
+        wrapper.className = 'image-wrapper';
+        wrapper.appendChild(img);
+        
+        // Add lightbox functionality
+        wrapper.onclick = () => openLightbox(attachment.file_path);
+        
+        previewDiv.appendChild(wrapper);
+    } else {
+        const fileLink = document.createElement('a');
+        fileLink.href = attachment.file_path;
+        fileLink.className = 'file-attachment';
+        fileLink.target = '_blank';
+        
+        const fileIcon = document.createElement('span');
+        fileIcon.className = 'file-icon';
+        fileIcon.textContent = getFileIcon(attachment.file_type);
+        
+        const fileInfo = document.createElement('span');
+        fileInfo.className = 'file-info';
+        fileInfo.textContent = `${attachment.file_name} (${formatFileSize(attachment.file_size)})`;
+        
+        fileLink.appendChild(fileIcon);
+        fileLink.appendChild(fileInfo);
+        previewDiv.appendChild(fileLink);
+    }
+    
+    return previewDiv;
 }
+
+// Utility functions
+function escapeHtml(unsafe) {
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function formatTimestamp(timestamp) {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now - date;
+    
+    if (diff < 60000) { // less than 1 minute
+        return 'just now';
+    } else if (diff < 3600000) { // less than 1 hour
+        const minutes = Math.floor(diff / 60000);
+        return `${minutes}m ago`;
+    } else if (diff < 86400000) { // less than 1 day
+        const hours = Math.floor(diff / 3600000);
+        return `${hours}h ago`;
+    } else if (diff < 604800000) { // less than 1 week
+        const days = Math.floor(diff / 86400000);
+        return `${days}d ago`;
+    } else {
+        return date.toLocaleDateString();
+    }
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function getFileIcon(fileType) {
+    const icons = {
+        'image/': '🖼️',
+        'video/': '🎥',
+        'audio/': '🎵',
+        'text/': '📄',
+        'application/pdf': '📕',
+        'application/zip': '📦',
+        'application/x-zip-compressed': '📦',
+        'application/x-rar-compressed': '📦'
+    };
+    
+    for (const [type, icon] of Object.entries(icons)) {
+        if (fileType.startsWith(type)) return icon;
+    }
+    return '📎';
+}
+
+// WebSocket handling
+function initializeWebSocket() {
+    ws = new WebSocket(WS_URL);
+    
+    ws.onopen = () => {
+        console.log('WebSocket connected');
+        state.reconnectAttempts = 0;
+        messageQueue.processQueue();
+    };
+    
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        handleWebSocketMessage(data);
+    };
+    
+    ws.onclose = () => {
+        console.log('WebSocket disconnected');
+        if (state.reconnectAttempts < state.maxReconnectAttempts) {
+            setTimeout(() => {
+                state.reconnectAttempts++;
+                initializeWebSocket();
+            }, state.reconnectDelay * Math.pow(2, state.reconnectAttempts));
+        }
+    };
+    
+    ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+    };
+}
+
+function handleWebSocketMessage(data) {
+    switch (data.type) {
+        case 'new_message':
+            appendNewMessage(data.message);
+            break;
+        case 'edit_message':
+            updateMessage(data.message);
+            break;
+        case 'delete_message':
+            removeMessage(data.message_id);
+            break;
+        case 'reaction':
+            updateMessageReactions(data.message_id, data.reactions);
+            break;
+        case 'user_status':
+            updateUserStatus(data.user_id, data.status);
+            break;
+        default:
+            console.warn('Unknown message type:', data.type);
+    }
+}
+
+// Error handling and notifications
+function showError(message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error-message';
+    errorDiv.textContent = message;
+    
+    const chatBox = document.getElementById('chat-box');
+    chatBox.insertBefore(errorDiv, chatBox.firstChild);
+    
+    setTimeout(() => {
+        errorDiv.remove();
+    }, 5000);
+}
+
+function updateLoadingState(isLoading) {
+    const loadingIndicator = document.getElementById('loading-indicator');
+    if (loadingIndicator) {
+        loadingIndicator.style.display = isLoading ? 'block' : 'none';
+    }
+}
+
+// Export functions for external use
+window.chatSystem = {
+    loadMessages,
+    sendMessage,
+    editMessage,
+    deleteMessage,
+    toggleReaction,
+    refreshMessages: () => loadMessages(1)
+};
