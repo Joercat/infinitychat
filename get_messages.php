@@ -2,24 +2,20 @@
 require_once 'config.php';
 session_start();
 
-// Security check
 if (!isset($_SESSION['user_id'])) {
     http_response_code(401);
     exit(json_encode(['error' => 'Unauthorized access']));
 }
 
-// Pagination parameters with input validation
 $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 $limit = isset($_GET['limit']) ? min(max(10, intval($_GET['limit'])), 50) : 50;
 $offset = ($page - 1) * $limit;
 
 try {
     $conn = getDbConnection();
-    
-    // Enable error reporting for debugging
+
     mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-    
-    // Get total count of messages with user visibility checks
+
     $countStmt = $conn->prepare("
         SELECT COUNT(*) as total 
         FROM messages m 
@@ -31,8 +27,7 @@ try {
     $countStmt->execute();
     $totalResult = $countStmt->get_result();
     $total = $totalResult->fetch_assoc()['total'];
-    
-    // Get paginated messages with full details
+
     $stmt = $conn->prepare("
         SELECT 
             m.id,
@@ -58,14 +53,14 @@ try {
         ORDER BY m.timestamp DESC 
         LIMIT ? OFFSET ?
     ");
-    
+
     $stmt->bind_param("iii", $_SESSION['user_id'], $limit, $offset);
     $stmt->execute();
     $result = $stmt->get_result();
-    
+
     $messages = [];
     while ($row = $result->fetch_assoc()) {
-        // Process attachments if any
+
         $attachments = [];
         if ($row['attachment_count'] > 0) {
             $attachStmt = $conn->prepare("
@@ -85,8 +80,7 @@ try {
                 ];
             }
         }
-        
-        // Process reactions
+
         $reactions = [];
         if ($row['reactions']) {
             $reactionTypes = explode(',', $row['reactions']);
@@ -103,8 +97,7 @@ try {
                 $reactions[$reaction['reaction_type']] = $reaction['count'];
             }
         }
-        
-        // Build message object with all data
+
         $messages[] = [
             'id' => $row['id'],
             'message' => $row['message'],
@@ -126,8 +119,7 @@ try {
             'can_delete' => ($_SESSION['user_id'] === $row['user_id'] || $_SESSION['user_role'] === 'admin')
         ];
     }
-    
-    // Send response with pagination metadata
+
     echo json_encode([
         'messages' => $messages,
         'pagination' => [
@@ -140,7 +132,7 @@ try {
         'timestamp' => time(),
         'server_time' => date('c')
     ], JSON_PRETTY_PRINT);
-    
+
 } catch (Exception $e) {
     error_log("Error in get_messages.php: " . $e->getMessage());
     http_response_code(500);
