@@ -1,8 +1,8 @@
  <?php
-define('DB_HOST', 'sql112.infinityfree.com');
-define('DB_USER', 'if0_39948895');
-define('DB_PASS', 'IVrxlCt5myQaHK');
-define('DB_NAME', 'if0_39948895_chats');
+define('DB_HOST', 'sqlXXX.infinityfree.com');
+define('DB_USER', 'if0_XXXXXXXX');
+define('DB_PASS', 'XXXXXXXXXXXXXX');
+define('DB_NAME', 'if0_XXXXXXXX_XXXX');
 define('UPLOAD_DIR_NAME', 'uploads');
 define('UPLOAD_DIR_PATH', __DIR__ . '/' . UPLOAD_DIR_NAME . '/');
 define('MAX_MESSAGE_LENGTH', 1500);
