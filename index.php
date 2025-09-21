@@ -40,7 +40,7 @@ if (!isset($_SESSION['user_id'])) {
     <link rel="icon" type="image/png" sizes="16x16" href="images/favicon-16.png">
     <script src="js/notifications.js"></script>
 </head>
-<body style="background-image: url('images/aero.png');">
+<body>
     <div id="chat-container">
         <div id="chat-header" class="aero-header">
             <h2>InfinityChat</h2>

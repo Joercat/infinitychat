@@ -14,7 +14,11 @@
  
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    /*background-image: url('/images/aero.png');*/
+    background-image: url('/images/aero.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
     color: var(--text-primary);
     margin: 0;
     display: flex;
@@ -22,10 +26,6 @@ body {
     align-items: center;
     height: 100vh;
 }
-
-.login-body {
-    /*background-image: url('/images/aero.png');*/
-    }
 
 .login-container {
     position: relative;
@@ -89,12 +89,17 @@ body {
     width: 100%;
     max-width: 800px;
     height: 95vh;
-    background: var(--bg-secondary);
+    background: rgba(30, 30, 30, 0.6);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     border-radius: 8px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    box-shadow: 
+        0 4px 20px rgba(0,0,0,0.5),
+        0 0 10px rgba(0, 0, 0, 0.5),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--border-color);
+    border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 #chat-header {
@@ -150,6 +155,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 15px;
+    background: rgba(0, 0, 0, 0.1);
 }
 
 .message {
@@ -158,6 +164,9 @@ body {
     border-radius: 18px;
     line-height: 1.4;
     word-wrap: break-word;
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .message .meta {
@@ -175,10 +184,11 @@ body {
 }
 
 .message-own {
-    background-color: var(--msg-own-bg);
+    background-color: rgba(0, 149, 246, 0.3);
     color: white;
     align-self: flex-end;
     border-bottom-right-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 149, 246, 0.2);
 }
 
 .message-own .meta {
@@ -186,10 +196,11 @@ body {
 }
 
 .message-other {
-    background-color: var(--msg-other-bg);
+    background-color: rgba(51, 51, 51, 0.4);
     color: var(--text-primary);
     align-self: flex-start;
     border-bottom-left-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .message a {
@@ -210,17 +221,20 @@ body {
 .file-attachment {
     display: flex;
     align-items: center;
-    background-color: var(--bg-tertiary);
+    background-color: rgba(37, 37, 37, 0.6);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
     padding: 10px;
     border-radius: 8px;
     margin-top: 5px;
     text-decoration: none;
     color: var(--text-primary);
     transition: background-color 0.2s;
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .file-attachment:hover {
-    background-color: var(--bg-hover);
+    background-color: rgba(42, 42, 42, 0.7);
 }
 
 .file-attachment svg {
@@ -238,67 +252,151 @@ body {
 #chat-form {
     display: flex;
     padding: 15px;
-    border-top: 1px solid var(--border-color);
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
     gap: 10px;
     align-items: flex-end;
+    background: rgba(30, 30, 30, 0.3);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 0 0 8px 8px;
 }
 
 #message-input {
     flex: 1;
-    border: 1px solid var(--border-color);
-    background-color: var(--bg-tertiary);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    background: linear-gradient(135deg, 
+        rgba(255, 255, 255, 0.1) 0%, 
+        rgba(255, 255, 255, 0.05) 100%);
+    backdrop-filter: blur(10px) saturate(150%);
+    -webkit-backdrop-filter: blur(10px) saturate(150%);
     color: var(--text-primary);
-    border-radius: 18px;
-    padding: 10px 15px;
+    border-radius: 25px;
+    padding: 12px 18px;
     resize: none;
     font-size: 1em;
     max-height: 120px;
-    transition: height 0.2s;
+    transition: all 0.3s ease;
+    box-shadow: 
+        0 4px 15px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    position: relative;
+}
+
+#message-input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+    font-style: italic;
 }
 
 #message-input:focus {
     outline: none;
-    border-color: var(--accent-primary);
+    border: 2px solid rgba(0, 149, 246, 0.8);
+    background: linear-gradient(135deg, 
+        rgba(255, 255, 255, 0.15) 0%, 
+        rgba(255, 255, 255, 0.08) 100%);
+    box-shadow: 
+        0 6px 20px rgba(0, 149, 246, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3),
+        0 0 0 4px rgba(0, 149, 246, 0.1);
+    transform: translateY(-1px);
 }
 
 #chat-form button {
-    border: none;
-    background: var(--accent-primary);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    background: linear-gradient(135deg, 
+        rgba(0, 149, 246, 0.9) 0%, 
+        rgba(0, 119, 198, 0.9) 100%);
+    backdrop-filter: blur(10px) saturate(150%);
+    -webkit-backdrop-filter: blur(10px) saturate(150%);
     color: white;
     border-radius: 50%;
-    width: 42px;
-    height: 42px;
+    width: 48px;
+    height: 48px;
     font-size: 1.5em;
     cursor: pointer;
     display: flex;
     justify-content: center;
     align-items: center;
     flex-shrink: 0;
-    transition: background-color 0.2s;
+    transition: all 0.3s ease;
+    box-shadow: 
+        0 4px 15px rgba(0, 149, 246, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    position: relative;
+    overflow: hidden;
+}
+
+#chat-form button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.2) 0%,
+        rgba(255, 255, 255, 0.1) 50%,
+        rgba(255, 255, 255, 0.05) 51%,
+        rgba(255, 255, 255, 0.1) 100%
+    );
+    border-radius: inherit;
+    pointer-events: none;
 }
 
 #chat-form button:hover {
-    background-color: var(--accent-secondary);
+    background: linear-gradient(135deg, 
+        rgba(0, 149, 246, 1) 0%, 
+        rgba(0, 119, 198, 1) 100%);
+    transform: translateY(-2px);
+    box-shadow: 
+        0 8px 25px rgba(0, 149, 246, 0.5),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4),
+        0 0 0 3px rgba(0, 149, 246, 0.2);
+}
+
+#chat-form button:active {
+    transform: translateY(0px);
+    box-shadow: 
+        0 2px 10px rgba(0, 149, 246, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 #chat-form button:disabled {
-    background-color: #555;
+    background: linear-gradient(135deg, 
+        rgba(85, 85, 85, 0.6) 0%, 
+        rgba(70, 70, 70, 0.6) 100%);
     cursor: not-allowed;
+    transform: none;
+    box-shadow: 
+        0 2px 8px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 #attach-file-btn {
-    background-color: var(--bg-tertiary);
+    background: linear-gradient(135deg, 
+        rgba(255, 255, 255, 0.15) 0%, 
+        rgba(255, 255, 255, 0.05) 100%);
     color: var(--text-primary);
+    border: 2px solid rgba(255, 255, 255, 0.3);
 }
 
 #attach-file-btn:hover {
-    background-color: var(--bg-hover);
+    background: linear-gradient(135deg, 
+        rgba(255, 255, 255, 0.2) 0%, 
+        rgba(255, 255, 255, 0.1) 100%);
+    box-shadow: 
+        0 8px 25px rgba(255, 255, 255, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3),
+        0 0 0 3px rgba(255, 255, 255, 0.1);
 }
 
 #upload-progress-container {
     padding: 5px 20px 10px;
     font-size: 0.9em;
     color: var(--text-secondary);
+    background: rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
 }
 
 #upload-progress {
@@ -306,11 +404,13 @@ body {
     height: 8px;
     border-radius: 4px;
     overflow: hidden;
-    background-color: var(--bg-tertiary);
+    background-color: rgba(37, 37, 37, 0.6);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
 }
 
 #upload-progress::-webkit-progress-bar {
-    background-color: var(--bg-tertiary);
+    background-color: rgba(37, 37, 37, 0.6);
 }
 
 #upload-progress::-webkit-progress-value {
@@ -321,6 +421,9 @@ body {
     padding: 0 15px 10px;
     font-size: 0.9em;
     color: var(--text-secondary);
+    background: rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
 }
 
 
@@ -329,16 +432,18 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--bg-secondary);
+    background: rgba(30, 30, 30, 0.3);
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #555;
+    background: rgba(85, 85, 85, 0.8);
     border-radius: 4px;
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #666;
+    background: rgba(102, 102, 102, 0.9);
 }
 
 .message-system {
@@ -349,6 +454,8 @@ body {
 
 .message-system .system-message-content {
     background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
     color: #bbb;
     padding: 8px 16px;
     border-radius: 20px;
